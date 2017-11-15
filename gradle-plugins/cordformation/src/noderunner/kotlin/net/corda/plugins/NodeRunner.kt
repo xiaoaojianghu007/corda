@@ -89,7 +89,7 @@ private abstract class JavaCommand(
     internal val command: List<String> = mutableListOf<String>().apply {
         add(getJavaPath())
         addAll(jvmArgs)
-        add("-Dname=$nodeName")
+        add("-Dname=\"$nodeName\"")
         val jvmArgs: MutableList<String> = mutableListOf()
         null != debugPort && jvmArgs.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=$debugPort")
         null != monitoringPort && jvmArgs.add("-javaagent:drivers/$jolokiaJar=port=$monitoringPort")
@@ -115,29 +115,33 @@ private class HeadlessJavaCommand(jarName: String, dir: File, debugPort: Int?, m
 
 private class TerminalWindowJavaCommand(jarName: String, dir: File, debugPort: Int?, monitoringPort: Int?, args: List<String>, jvmArgs: List<String>)
     : JavaCommand(jarName, dir, debugPort, monitoringPort, "${dir.name}-$jarName", {}, args, jvmArgs) {
-    override fun processBuilder() = ProcessBuilder(when (os) {
-        OS.MACOS -> {
-            listOf("osascript", "-e", """tell app "Terminal"
+    override fun processBuilder(): ProcessBuilder {
+        val params = when (os) {
+            OS.MACOS -> {
+                listOf("osascript", "-e", """tell app "Terminal"
     activate
     delay 0.5
     tell app "System Events" to tell process "Terminal" to keystroke "t" using command down
     delay 0.5
     do script "bash -c 'cd \"$dir\" ; \"${command.joinToString("""\" \"""")}\" && exit'" in selected tab of the front window
 end tell""")
-        }
-        OS.WINDOWS -> {
-            listOf("cmd", "/C", "start ${command.joinToString(" ") { windowsSpaceEscape(it) }}")
-        }
-        OS.LINUX -> {
-            // Start shell to keep window open unless java terminated normally or due to SIGTERM:
-            val command = "${unixCommand()}; [ $? -eq 0 -o $? -eq 143 ] || sh"
-            if (isTmux()) {
-                listOf("tmux", "new-window", "-n", nodeName, command)
-            } else {
-                listOf("xterm", "-T", nodeName, "-e", command)
+            }
+            OS.WINDOWS -> {
+                listOf("cmd", "/C", "start ${command.joinToString(" ") { windowsSpaceEscape(it) }}")
+            }
+            OS.LINUX -> {
+                // Start shell to keep window open unless java terminated normally or due to SIGTERM:
+                val command = "${unixCommand()}; [ $? -eq 0 -o $? -eq 143 ] || sh"
+                if (isTmux()) {
+                    listOf("tmux", "new-window", "-n", nodeName, command)
+                } else {
+                    listOf("xterm", "-T", nodeName, "-e", command)
+                }
             }
         }
-    })
+        println("Running command: ${params.joinToString(" ")}")
+        return ProcessBuilder(params)
+    }
 
     private fun unixCommand() = command.map(::quotedFormOf).joinToString(" ")
     override fun getJavaPath(): String = File(File(System.getProperty("java.home"), "bin"), "java").path

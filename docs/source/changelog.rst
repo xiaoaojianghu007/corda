@@ -6,6 +6,9 @@ from the previous milestone release.
 
 UNRELEASED
 ----------
+* Per CorDapp configuration is now exposed. ``CordappContext`` now exposes a ``CordappConfig`` object that is populated
+at CorDapp context creation time from a file source during runtime.
+
 * Removed blacklisted word checks in Corda X.500 name to allow "Server" or "Node" to be use as part of the legal name.
 
 * Separated our pre-existing Artemis broker into an RPC broker and a P2P broker.
@@ -166,9 +169,6 @@ UNRELEASED
 
 * The ability for CordaServices to register callbacks so they can be notified of shutdown and clean up resource such as
   open ports.
-
-* Move to a message based control of peer to peer bridge formation to allow for future out of process bridging components.
-  This removes the legacy Artemis bridges completely, so the ``useAMQPBridges`` configuration property has been removed.
 
 .. _changelog_v1:
 

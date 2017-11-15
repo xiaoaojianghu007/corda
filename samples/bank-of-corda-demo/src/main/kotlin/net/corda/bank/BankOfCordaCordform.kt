@@ -25,8 +25,8 @@ private const val BOC_RPC_ADMIN_PORT = 10015
 private const val BOC_WEB_PORT = 10007
 
 class BankOfCordaCordform : CordformDefinition() {
+    // TODO: Readd finance dependency - will fail without it
     init {
-        cordappPackages += "net.corda.finance"
         node {
             name(NOTARY_NAME)
             notary(NotaryConfig(validating = true))
@@ -65,7 +65,7 @@ class BankOfCordaCordform : CordformDefinition() {
 object DeployNodes {
     @JvmStatic
     fun main(args: Array<String>) {
-        BankOfCordaCordform().deployNodes()
+        BankOfCordaCordform().deployNodes(listOf("net.corda.finance"))
     }
 }
 
@@ -119,7 +119,7 @@ object IssueCash {
         Usage: bank-of-corda --role ISSUER
                bank-of-corda --role (ISSUE_CASH_RPC|ISSUE_CASH_WEB) --quantity <quantity> --currency <currency>
 
-        Please refer to the documentation in docs/build/index.html for more info.
+        Please refer toer. the documentation in docs/build/index.html for more info.
 
         """.trimIndent())
         parser.printHelpOn(System.out)

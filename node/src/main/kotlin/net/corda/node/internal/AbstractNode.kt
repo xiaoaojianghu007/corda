@@ -28,6 +28,7 @@ import net.corda.core.utilities.debug
 import net.corda.core.utilities.getOrThrow
 import net.corda.node.VersionInfo
 import net.corda.node.internal.classloading.requireAnnotation
+import net.corda.node.internal.cordapp.CordappConfigFileProvider
 import net.corda.node.internal.cordapp.CordappLoader
 import net.corda.node.internal.cordapp.CordappProviderImpl
 import net.corda.node.internal.cordapp.CordappProviderInternal
@@ -182,7 +183,7 @@ abstract class AbstractNode(val configuration: NodeConfiguration,
         initCertificate()
         val schemaService = NodeSchemaService(cordappLoader.cordappSchemas)
         val (identity, identityKeyPair) = obtainIdentity(notaryConfig = null)
-        return initialiseDatabasePersistence(schemaService,  makeIdentityService(identity.certificate)) { database ->
+        return initialiseDatabasePersistence(schemaService, makeIdentityService(identity.certificate)) { database ->
             // TODO The fact that we need to specify an empty list of notaries just to generate our node info looks like
             // a code smell.
             val persistentNetworkMapCache = PersistentNetworkMapCache(database, notaries = emptyList())
@@ -534,7 +535,7 @@ abstract class AbstractNode(val configuration: NodeConfiguration,
         checkpointStorage = DBCheckpointStorage()
         val metrics = MetricRegistry()
         attachments = NodeAttachmentService(metrics, configuration.attachmentContentCacheSizeBytes, configuration.attachmentCacheBound)
-        val cordappProvider = CordappProviderImpl(cordappLoader, attachments)
+        val cordappProvider = CordappProviderImpl(cordappLoader, CordappConfigFileProvider(), attachments)
         val keyManagementService = makeKeyManagementService(identityService, keyPairs)
         _services = ServiceHubInternalImpl(
                 identityService,
