@@ -4,6 +4,8 @@ import groovy.lang.Closure
 import net.corda.cordform.CordformDefinition
 import org.apache.tools.ant.filters.FixCrLfFilter
 import org.gradle.api.DefaultTask
+import org.gradle.api.NamedDomainObjectContainer
+import org.gradle.api.GradleException
 import org.gradle.api.plugins.JavaPluginConvention
 import org.gradle.api.tasks.SourceSet.MAIN_SOURCE_SET_NAME
 import org.gradle.api.tasks.TaskAction
@@ -51,6 +53,24 @@ open class Cordform : DefaultTask() {
     @Suppress("MemberVisibilityCanPrivate")
     fun node(configureClosure: Closure<in Node>) {
         nodes += project.configure(Node(project), configureClosure) as Node
+    }
+
+    /**
+     * Permits to specify a set of users in the task as:
+     *
+     * myUsers = listOfUsers {
+     *     userName1 {
+     *        password = "<password>"
+     *        permissions = ["<permission1>", ...]
+     *    }
+     *    ...
+     * }
+     */
+    fun listOfUsers(usersConfig: Closure<*>): List<Map<String, Any?>> {
+        return (project.container(NodeUser::class.java) as NamedDomainObjectContainer<NodeUser>)
+                .configure(usersConfig)
+                .map { it.toPropertyMap() }
+                .toList()
     }
 
     /**
@@ -214,5 +234,102 @@ open class Cordform : DefaultTask() {
             }
             return false
         }
+    }
+        
+    private fun generateAndInstallNodeInfos() {
+        generateNodeInfos()
+        installNodeInfos()
+    }
+
+    private fun generateNodeInfos() {
+        project.logger.info("Generating node infos")
+        val nodeProcesses = buildNodeProcesses()
+        try {
+            validateNodeProcessess(nodeProcesses)
+        } finally {
+            destroyNodeProcesses(nodeProcesses)
+        }
+    }
+
+    private fun buildNodeProcesses(): Map<Node, Process> {
+        val command = generateNodeInfoCommand()
+        return nodes.map {
+                    it.makeLogDirectory()
+                    buildProcess(it, command, "generate-info.log") }.toMap()
+    }
+
+    private fun validateNodeProcessess(nodeProcesses: Map<Node, Process>) {
+        nodeProcesses.forEach { (node, process) ->
+            validateNodeProcess(node, process)
+        }
+    }
+
+    private fun destroyNodeProcesses(nodeProcesses: Map<Node, Process>) {
+        nodeProcesses.forEach { (_, process) ->
+            process.destroyForcibly()
+        }
+    }
+
+    private fun buildProcess(node: Node, command: List<String>, logFile: String): Pair<Node, Process> {
+        val process = ProcessBuilder(command)
+                .directory(node.fullPath().toFile())
+                .redirectErrorStream(true)
+                // InheritIO causes hangs on windows due the gradle buffer also not being flushed.
+                // Must redirect to output or logger (node log is still written, this is just startup banner)
+                .redirectOutput(node.logFile(logFile).toFile())
+                .addEnvironment("CAPSULE_CACHE_DIR", Node.capsuleCacheDir)
+                .start()
+        return Pair(node, process)
+    }
+
+    private fun generateNodeInfoCommand(): List<String> = listOf(
+            "java",
+            "-Dcapsule.log=verbose",
+            "-Dcapsule.dir=${Node.capsuleCacheDir}",
+            "-jar",
+            Node.nodeJarName,
+            "--just-generate-node-info"
+    )
+
+    private fun validateNodeProcess(node: Node, process: Process) {
+        val generateTimeoutSeconds = 60L
+        if (!process.waitFor(generateTimeoutSeconds, TimeUnit.SECONDS)) {
+            throw GradleException("Node took longer $generateTimeoutSeconds seconds than too to generate node info - see node log at ${node.fullPath()}/logs")
+        }
+        if (process.exitValue() != 0) {
+            throw GradleException("Node exited with ${process.exitValue()} when generating node infos - see node log at ${node.fullPath()}/logs")
+        }
+        project.logger.info("Generated node info for ${node.fullPath()}")
+    }
+
+    private fun installNodeInfos() {
+        project.logger.info("Installing node infos")
+        for (source in nodes) {
+            for (destination in nodes) {
+                if (source.nodeDir != destination.nodeDir) {
+                    project.copy {
+                        it.apply {
+                            from(source.fullPath().toString())
+                            include("nodeInfo-*")
+                            into(destination.fullPath().resolve(CordformNode.NODE_INFO_DIRECTORY).toString())
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun Node.logFile(name: String): Path = this.logDirectory().resolve(name)
+    private fun ProcessBuilder.addEnvironment(key: String, value: String) = this.apply { environment().put(key, value) }
+
+    // An element of node DSL describing a user.
+    // @see listOfUsers
+    internal class NodeUser(var name: String? = null) {
+        var password: String? = null
+        var permissions: List<String> = mutableListOf<String>()
+        fun toPropertyMap() = mapOf(
+                "username" to name,
+                "password" to password,
+                "permissions" to permissions)
     }
 }

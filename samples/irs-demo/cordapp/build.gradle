@@ -45,19 +45,19 @@ dependencies {
 
 task deployNodes(type: net.corda.plugins.Cordform, dependsOn: ['jar']) {
 
-    ext.rpcUsers = [
-            ['username' : "user",
-             'password' : "password",
-             'permissions' : [
-                     "StartFlow.net.corda.irs.flows.AutoOfferFlow\$Requester",
-                     "StartFlow.net.corda.irs.flows.UpdateBusinessDayFlow\$Broadcast",
-                     "StartFlow.net.corda.irs.api.NodeInterestRates\$UploadFixesFlow",
-                     "InvokeRpc.vaultQueryBy",
-                     "InvokeRpc.networkMapSnapshot",
-                     "InvokeRpc.currentNodeTime",
-                     "InvokeRpc.wellKnownPartyFromX500Name"
-             ]]
-    ]
+    ext.rpcUsers = listOfUsers {
+        user {
+          password = "password"
+          permissions = [
+                 "StartFlow.net.corda.irs.flows.AutoOfferFlow\$Requester",
+                 "StartFlow.net.corda.irs.flows.UpdateBusinessDayFlow\$Broadcast",
+                 "StartFlow.net.corda.irs.api.NodeInterestRates\$UploadFixesFlow",
+                 "InvokeRpc.vaultQueryBy",
+                 "InvokeRpc.networkMapSnapshot",
+                 "InvokeRpc.currentNodeTime",
+                 "InvokeRpc.wellKnownPartyFromX500Name"]
+        }
+    }
 
     directory "./build/nodes"
     node {

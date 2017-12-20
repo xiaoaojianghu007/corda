@@ -9,6 +9,8 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import org.gradle.api.NamedDomainObjectContainer
+import groovy.lang.Closure
 
 /**
  * Represents a node that will be installed.
@@ -87,7 +89,15 @@ class Node(private val project: Project) : CordformNode() {
     }
 
     private fun configureProperties() {
-        config = config.withValue("rpcUsers", ConfigValueFactory.fromIterable(rpcUsers))
+        if (rpcUsers != null) {
+            config = config.withValue("security", ConfigValueFactory.fromMap(mapOf(
+                    "authService" to mapOf(
+                            "dataSource" to mapOf(
+                                    "type" to "INMEMORY",
+                                    "users" to rpcUsers)))))
+
+        }
+
         if (notary != null) {
             config = config.withValue("notary", ConfigValueFactory.fromMap(notary))
         }
@@ -182,11 +192,12 @@ class Node(private val project: Project) : CordformNode() {
     /**
      * Appends installed config file with properties from an optional file.
      */
-    private fun appendOptionalConfig(confFile: File) {
+    private fun appendOptionalConfig() {
+
         val optionalConfig: File? = when {
             project.findProperty(configFileProperty) != null -> //provided by -PconfigFile command line property when running Gradle task
                 File(project.findProperty(configFileProperty) as String)
-            config.hasPath(configFileProperty) -> File(config.getString(configFileProperty))
+            config.hasPath(configFileProperty) -> project.file(config.getString(configFileProperty))
             else -> null
         }
 
