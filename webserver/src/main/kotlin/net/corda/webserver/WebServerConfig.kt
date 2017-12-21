@@ -35,7 +35,7 @@ class WebServerConfig(override val baseDirectory: Path, val config: Config, val 
             } else null
         }
 
-        fun defaultRunAs(config: Config) : User {
+        fun defaultRunAs(config: Config): User {
             val users = config.getListOrNull("security.authService.dataSource.users") ?:
                     config.getListOrNull("rpcUsers") ?:
                     throw IllegalArgumentException("Cannot find any user credential in config file")
