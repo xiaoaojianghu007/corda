@@ -56,7 +56,7 @@ open class Cordform : DefaultTask() {
     }
 
     /**
-     * Permits to specify a set of users in the task as:
+     * Permits to create a list of users as:
      *
      * myUsers = listOfUsers {
      *     userName1 {
