@@ -44,4 +44,3 @@ class WebServerConfig(override val baseDirectory: Path, val config: Config, val 
         }
     }
 }
-
