@@ -58,7 +58,7 @@ open class Cordform : DefaultTask() {
     /**
      * Permits to create a list of users as:
      *
-     * myUsers = listOfUsers {
+     * myUsers = users {
      *     userName1 {
      *        password = "<password>"
      *        permissions = ["<permission1>", ...]
@@ -66,7 +66,7 @@ open class Cordform : DefaultTask() {
      *    ...
      * }
      */
-    fun listOfUsers(usersConfig: Closure<*>): List<Map<String, Any?>> {
+    fun users(usersConfig: Closure<*>): List<Map<String, Any?>> {
         return (project.container(NodeUser::class.java) as NamedDomainObjectContainer<NodeUser>)
                 .configure(usersConfig)
                 .map { it.toPropertyMap() }
@@ -237,7 +237,7 @@ open class Cordform : DefaultTask() {
     }
 
     // An element of node DSL describing a user.
-    // @see listOfUsers
+    // @see users
     internal class NodeUser(var name: String? = null) {
         var password: String? = null
         var permissions: List<String> = mutableListOf<String>()
