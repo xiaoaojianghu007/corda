@@ -75,7 +75,7 @@ class P2PMessagingClient(config: NodeConfiguration,
                          private val nodeExecutor: AffinityExecutor.ServiceAffinityExecutor,
                          private val database: CordaPersistence,
                          advertisedAddress: NetworkHostAndPort = serverAddress,
-                         maxMessageSize: Int
+                         private val maxMessageSize: Int
 ) : SingletonSerializeAsToken(), MessagingService {
     companion object {
         private val log = contextLogger()
@@ -516,6 +516,7 @@ class P2PMessagingClient(config: NodeConfiguration,
     }
 
     override fun createMessage(topicSession: TopicSession, data: ByteArray, uuid: UUID): Message {
+        require(data.size < maxMessageSize) { "Message size exceeded maximum message size allowed by the network operator." }
         // TODO: We could write an object that proxies directly to an underlying MQ message here and avoid copying.
         return NodeClientMessage(topicSession, data, uuid)
     }
