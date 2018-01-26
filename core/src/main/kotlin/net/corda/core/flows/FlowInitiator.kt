@@ -10,6 +10,7 @@ import java.security.Principal
  * communication started by peer node [FlowInitiator.Peer], scheduled flows [FlowInitiator.Scheduled]
  * or via the Corda Shell [FlowInitiator.Shell].
  */
+@Suppress("DEPRECATION")
 @Deprecated("Do not use these types. Future releases might remove them.")
 @CordaSerializable
 sealed class FlowInitiator : Principal {
