@@ -7,7 +7,9 @@ import net.corda.core.crypto.*
 import net.corda.core.identity.Party
 import net.corda.core.internal.VisibleForTesting
 import net.corda.core.node.ServiceHub
+import net.corda.core.node.ServicesForResolution
 import net.corda.core.node.StateLoader
+import net.corda.core.node.services.AttachmentStorage
 import net.corda.core.serialization.CordaSerializable
 import net.corda.core.serialization.SerializedBytes
 import net.corda.core.serialization.deserialize
@@ -50,17 +52,14 @@ data class SignedTransaction(val txBits: SerializedBytes<CoreTransaction>,
     @Volatile
     @Transient private var cachedTransaction: CoreTransaction? = null
 
-    /** Lazily calculated access to the deserialized/hashed transaction data. */
-    private val transaction: CoreTransaction get() = cachedTransaction ?: txBits.deserialize().apply { cachedTransaction = this }
-
     /** The id of the contained [WireTransaction]. */
-    override val id: SecureHash get() = transaction.id
+    override val id: SecureHash get() = coreTransaction.id
 
-    /** Returns the contained [WireTransaction], or throws if this is a notary change transaction. */
-    val tx: WireTransaction get() = transaction as WireTransaction
+    /** Lazily calculated access to the deserialised/hashed transaction data. */
+    val coreTransaction: CoreTransaction get() = cachedTransaction ?: txBits.deserialize().apply { cachedTransaction = this }
 
-    /** Returns the contained [NotaryChangeWireTransaction], or throws if this is a normal transaction. */
-    val notaryChangeTx: NotaryChangeWireTransaction get() = transaction as NotaryChangeWireTransaction
+    /** Returns the contained [WireTransaction], or throws if this is a notary change or contract upgrade transaction. */
+    val tx: WireTransaction get() = coreTransaction as WireTransaction
 
     /**
      * Helper function to directly build a [FilteredTransaction] using provided filtering functions,
@@ -69,9 +68,9 @@ data class SignedTransaction(val txBits: SerializedBytes<CoreTransaction>,
     fun buildFilteredTransaction(filtering: Predicate<Any>) = tx.buildFilteredTransaction(filtering)
 
     /** Helper to access the inputs of the contained transaction */
-    val inputs: List<StateRef> get() = transaction.inputs
+    val inputs: List<StateRef> get() = coreTransaction.inputs
     /** Helper to access the notary of the contained transaction */
-    val notary: Party? get() = transaction.notary
+    val notary: Party? get() = coreTransaction.notary
 
     override val requiredSigningKeys: Set<PublicKey> get() = tx.requiredSigningKeys
 
@@ -152,11 +151,24 @@ data class SignedTransaction(val txBits: SerializedBytes<CoreTransaction>,
     @JvmOverloads
     @Throws(SignatureException::class, AttachmentResolutionException::class, TransactionResolutionException::class, TransactionVerificationException::class)
     fun verify(services: ServiceHub, checkSufficientSignatures: Boolean = true) {
-        if (isNotaryChangeTransaction()) {
-            verifyNotaryChangeTransaction(checkSufficientSignatures, services)
-        } else {
-            verifyRegularTransaction(checkSufficientSignatures, services)
+        checkSignaturesAreValid()
+        if (checkSufficientSignatures) resolveTransactionWithSignatures(services).verifyRequiredSignatures()
+
+        when (coreTransaction) {
+            is NotaryChangeWireTransaction -> verifyNotaryChangeTransaction(services)
+            is ContractUpgradeWireTransaction -> verifyContractUpgradeTransaction(services)
+            else -> verifyRegularTransaction(services)
         }
+    }
+
+    /** No contract code is run when verifying notary change transactions, it is sufficient to check invariants during initialisation. */
+    private fun verifyNotaryChangeTransaction(services: ServicesForResolution) {
+        resolveNotaryChangeTransaction(services)
+    }
+
+    /** No contract code is run when verifying contract upgrade transactions, it is sufficient to check invariants during initialisation. */
+    private fun verifyContractUpgradeTransaction(services: ServicesForResolution) {
+        resolveContractUpgradeTransaction(services)
     }
 
     /**
@@ -164,31 +176,29 @@ data class SignedTransaction(val txBits: SerializedBytes<CoreTransaction>,
      * from the attachment is trusted. This will require some partial serialisation work to not load the ContractState
      * objects from the TransactionState.
      */
-    private fun verifyRegularTransaction(checkSufficientSignatures: Boolean, services: ServiceHub) {
-        checkSignaturesAreValid()
-        if (checkSufficientSignatures) verifyRequiredSignatures()
+    private fun verifyRegularTransaction(services: ServiceHub) {
         val ltx = tx.toLedgerTransaction(services)
         // TODO: allow non-blocking verification
         services.transactionVerifierService.verify(ltx).getOrThrow()
     }
 
-    private fun verifyNotaryChangeTransaction(checkSufficientSignatures: Boolean, services: ServiceHub) {
-        val ntx = resolveNotaryChangeTransaction(services)
-        if (checkSufficientSignatures) ntx.verifyRequiredSignatures()
-    }
-
-    fun isNotaryChangeTransaction() = transaction is NotaryChangeWireTransaction
+    /**
+     * Resolves the underlying base transaction and then returns it, handling any special case transactions such as
+     * [NotaryChangeWireTransaction].
+     */
+    fun resolveBaseTransaction(services: ServicesForResolution) = resolveBaseTransaction(services, services.attachments)
 
     /**
      * Resolves the underlying base transaction and then returns it, handling any special case transactions such as
      * [NotaryChangeWireTransaction].
      */
-    fun resolveBaseTransaction(services: StateLoader): BaseTransaction {
-        return when (transaction) {
-            is NotaryChangeWireTransaction -> resolveNotaryChangeTransaction(services)
+    fun resolveBaseTransaction(stateLoader: StateLoader, attachments: AttachmentStorage): BaseTransaction {
+        return when (coreTransaction) {
+            is NotaryChangeWireTransaction -> resolveNotaryChangeTransaction(stateLoader)
+            is ContractUpgradeWireTransaction -> resolveContractUpgradeTransaction(stateLoader, attachments)
             is WireTransaction -> this.tx
             is FilteredTransaction -> throw IllegalStateException("Persistence of filtered transactions is not supported.")
-            else -> throw IllegalStateException("Unknown transaction type ${transaction::class.qualifiedName}")
+            else -> throw IllegalStateException("Unknown transaction type ${coreTransaction::class.qualifiedName}")
         }
     }
 
@@ -196,25 +206,46 @@ data class SignedTransaction(val txBits: SerializedBytes<CoreTransaction>,
      * Resolves the underlying transaction with signatures and then returns it, handling any special case transactions
      * such as [NotaryChangeWireTransaction].
      */
-    fun resolveTransactionWithSignatures(services: ServiceHub): TransactionWithSignatures {
-        return when (transaction) {
+    fun resolveTransactionWithSignatures(services: ServicesForResolution): TransactionWithSignatures {
+        return when (coreTransaction) {
             is NotaryChangeWireTransaction -> resolveNotaryChangeTransaction(services)
+            is ContractUpgradeWireTransaction -> resolveContractUpgradeTransaction(services)
             is WireTransaction -> this
             is FilteredTransaction -> throw IllegalStateException("Persistence of filtered transactions is not supported.")
-            else -> throw IllegalStateException("Unknown transaction type ${transaction::class.qualifiedName}")
+            else -> throw IllegalStateException("Unknown transaction type ${coreTransaction::class.qualifiedName}")
         }
     }
 
     /**
-     * If [transaction] is a [NotaryChangeWireTransaction], loads the input states and resolves it to a
+     * If [coreTransaction] is a [NotaryChangeWireTransaction], loads the input states and resolves it to a
      * [NotaryChangeLedgerTransaction] so the signatures can be verified.
      */
     fun resolveNotaryChangeTransaction(services: ServiceHub) = resolveNotaryChangeTransaction(services as StateLoader)
 
+    /**
+     * If [coreTransaction] is a [NotaryChangeWireTransaction], loads the input states and resolves it to a
+     * [NotaryChangeLedgerTransaction] so the signatures can be verified.
+     */
     fun resolveNotaryChangeTransaction(stateLoader: StateLoader): NotaryChangeLedgerTransaction {
-        val ntx = transaction as? NotaryChangeWireTransaction
-                ?: throw IllegalStateException("Expected a ${NotaryChangeWireTransaction::class.simpleName} but found ${transaction::class.simpleName}")
+        val ntx = coreTransaction as? NotaryChangeWireTransaction
+                ?: throw IllegalStateException("Expected a ${NotaryChangeWireTransaction::class.simpleName} but found ${coreTransaction::class.simpleName}")
         return ntx.resolve(stateLoader, sigs)
+    }
+
+    /**
+     * If [coreTransaction] is a [ContractUpgradeWireTransaction], loads the input states and resolves it to a
+     * [ContractUpgradeLedgerTransaction] so the signatures can be verified.
+     */
+    fun resolveContractUpgradeTransaction(services: ServicesForResolution) = resolveContractUpgradeTransaction(services, services.attachments)
+
+    /**
+     * If [coreTransaction] is a [ContractUpgradeWireTransaction], loads the input states and resolves it to a
+     * [ContractUpgradeLedgerTransaction] so the signatures can be verified.
+     */
+    fun resolveContractUpgradeTransaction(stateLoader: StateLoader, attachments: AttachmentStorage): ContractUpgradeLedgerTransaction {
+        val ctx = coreTransaction as? ContractUpgradeWireTransaction
+                ?: throw IllegalStateException("Expected a ${ContractUpgradeWireTransaction::class.simpleName} but found ${coreTransaction::class.simpleName}")
+        return ctx.resolve(stateLoader, attachments, sigs)
     }
 
     override fun toString(): String = "${javaClass.simpleName}(id=$id)"
@@ -227,4 +258,11 @@ data class SignedTransaction(val txBits: SerializedBytes<CoreTransaction>,
     @CordaSerializable
     class SignaturesMissingException(val missing: Set<PublicKey>, val descriptions: List<String>, override val id: SecureHash)
         : NamedByHash, SignatureException(missingSignatureMsg(missing, descriptions, id)), CordaThrowable by CordaException(missingSignatureMsg(missing, descriptions, id))
+
+    /** Returns the contained [NotaryChangeWireTransaction], or throws if this is a normal transaction. */
+    @Deprecated("No replacement, this should not be used outside of Corda core")
+    val notaryChangeTx: NotaryChangeWireTransaction get() = coreTransaction as NotaryChangeWireTransaction
+
+    @Deprecated("No replacement, this should not be used outside of Corda core")
+    fun isNotaryChangeTransaction() = this.coreTransaction  is NotaryChangeWireTransaction
 }
