@@ -52,7 +52,7 @@ object ProcessUtilities {
         return ProcessBuilder(command).apply {
             inheritIO()
             if (workingDirectory != null) {
-                redirectError((workingDirectory / "$className.stderr.log").toFile())
+                redirectError(( errorLogPath ?: workingDirectory / "$className.stderr.log").toFile())
                 redirectOutput((workingDirectory / "$className.stdout.log").toFile())
                 directory(workingDirectory.toFile())
             }

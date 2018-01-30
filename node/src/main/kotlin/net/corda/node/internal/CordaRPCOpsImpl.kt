@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package net.corda.node.internal
 
 import net.corda.client.rpc.notUsed
@@ -73,12 +75,14 @@ internal class CordaRPCOpsImpl(
         }
     }
 
+    @Suppress("OverridingDeprecatedMember")
     override fun internalVerifiedTransactionsSnapshot(): List<SignedTransaction> {
         val (snapshot, updates) = internalVerifiedTransactionsFeed()
         updates.notUsed()
         return snapshot
     }
 
+    @Suppress("OverridingDeprecatedMember")
     override fun internalVerifiedTransactionsFeed(): DataFeed<List<SignedTransaction>, SignedTransaction> {
         return database.transaction {
             services.validatedTransactions.track()

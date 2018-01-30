@@ -457,7 +457,7 @@ class NodeVaultService(
                         }
                     }
             if (stateRefs.isNotEmpty())
-                statesAndRefs.addAll(stateLoader.loadStates(stateRefs) as Collection<StateAndRef<T>>)
+                statesAndRefs.addAll(uncheckedCast(stateLoader.loadStates(stateRefs)))
 
             return Vault.Page(states = statesAndRefs, statesMetadata = statesMeta, stateTypes = criteriaParser.stateTypes, totalStatesAvailable = totalStates, otherResults = otherResults)
         } catch (e: java.lang.Exception) {
