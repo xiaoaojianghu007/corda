@@ -335,7 +335,6 @@ object JacksonSupport {
         @JsonProperty protected abstract fun getTransaction(): CoreTransaction
         @JsonIgnore abstract fun getTx(): WireTransaction
         @JsonIgnore abstract fun getNotaryChangeTx(): NotaryChangeWireTransaction
-        @JsonIgnore abstract fun getContractUpgradeTx(): ContractUpgradeWireTransaction
         @JsonIgnore abstract fun getInputs(): List<StateRef>
         @JsonIgnore abstract fun getNotary(): Party?
         @JsonIgnore abstract fun getId(): SecureHash
