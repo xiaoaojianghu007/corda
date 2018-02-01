@@ -317,7 +317,7 @@ open class MockNetwork(private val cordappPackages: List<String>,
             return E2ETestKeyManagementService(identityService, keyPairs)
         }
 
-        override fun startShell(rpcOps: CordaRPCOps) {
+        override fun startShell(rpcOps: (String?, String?) -> CordaRPCOps) {
             //No mock shell
         }
 

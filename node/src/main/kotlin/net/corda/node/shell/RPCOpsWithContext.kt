@@ -11,7 +11,10 @@ import java.lang.reflect.Proxy
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
 
-fun makeRPCOpsWithContext(cordaRPCOps: CordaRPCOps, invocationContext:InvocationContext, authorizingSubject: AuthorizingSubject) : CordaRPCOps {
+fun makeRPCOpsWithContext(getCordaRPCOps: (username: String?, credential: String?) -> CordaRPCOps, invocationContext:InvocationContext, authorizingSubject: AuthorizingSubject, username: String?, credential: String?) : CordaRPCOps {
+    val cordaRPCOps: CordaRPCOps by lazy {
+        getCordaRPCOps(username, credential)
+    }
 
     return Proxy.newProxyInstance(CordaRPCOps::class.java.classLoader, arrayOf(CordaRPCOps::class.java), { _, method, args ->
         RPCContextRunner(invocationContext, authorizingSubject) {

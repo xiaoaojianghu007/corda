@@ -3,6 +3,7 @@ package net.corda.node.internal
 import com.codahale.metrics.MetricRegistry
 import com.google.common.collect.MutableClassToInstanceMap
 import com.google.common.util.concurrent.MoreExecutors
+import net.corda.client.rpc.CordaRPCClient
 import net.corda.confidential.SwapIdentitiesFlow
 import net.corda.confidential.SwapIdentitiesHandler
 import net.corda.core.CordaException
@@ -35,6 +36,7 @@ import net.corda.node.internal.security.RPCSecurityManager
 import net.corda.node.services.ContractUpgradeHandler
 import net.corda.node.services.FinalityHandler
 import net.corda.node.services.NotaryChangeHandler
+import net.corda.node.services.Permissions
 import net.corda.node.services.api.*
 import net.corda.node.services.config.BFTSMaRtConfiguration
 import net.corda.node.services.config.NodeConfiguration
@@ -58,6 +60,7 @@ import net.corda.node.shell.InteractiveShell
 import net.corda.node.utilities.AffinityExecutor
 import net.corda.nodeapi.internal.DevIdentityGenerator
 import net.corda.nodeapi.internal.SignedNodeInfo
+import net.corda.nodeapi.internal.config.User
 import net.corda.nodeapi.internal.crypto.X509Utilities
 import net.corda.nodeapi.internal.network.NETWORK_PARAMS_FILE_NAME
 import net.corda.nodeapi.internal.network.NetworkParameters
@@ -241,7 +244,19 @@ abstract class AbstractNode(val configuration: NodeConfiguration,
             tokenizableServices = nodeServices + cordaServices + schedulerService
             registerCordappFlows(smm)
             _services.rpcFlows += cordappLoader.cordapps.flatMap { it.rpcFlows }
-            startShell(rpcOps)
+
+            startShell({ username: String?, credentials: String? ->
+                if (configuration.rpcOptions.address == null) {
+                    Node.printBasicNodeInfo("CordaRPCOps - direct access")
+                    rpcOps
+                } else {
+                    val client = CordaRPCClient(configuration.rpcOptions.address!!)
+                    Node.printBasicNodeInfo("CordaRPCOps - RPC access user=${username ?: "default"}")
+                    val rpcUser = User(username ?: "demo", credentials
+                            ?: "demo", permissions = setOf(Permissions.all()))
+                    client.start(rpcUser.username, rpcUser.password).proxy
+                }
+            })
             Pair(StartedNodeImpl(this, _services, info, checkpointStorage, smm, attachments, network, database, rpcOps, flowStarter, notaryService), schedulerService)
         }
         val networkMapUpdater = NetworkMapUpdater(services.networkMapCache,
@@ -277,7 +292,7 @@ abstract class AbstractNode(val configuration: NodeConfiguration,
      */
     protected abstract fun getRxIoScheduler(): Scheduler
 
-    open fun startShell(rpcOps: CordaRPCOps) {
+    open fun startShell(rpcOps: (String?, String?) -> CordaRPCOps) {
         InteractiveShell.startShell(configuration, rpcOps, securityManager, _services.identityService, _services.database)
     }
 
