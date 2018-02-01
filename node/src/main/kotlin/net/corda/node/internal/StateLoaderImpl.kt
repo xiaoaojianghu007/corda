@@ -1,6 +1,7 @@
 package net.corda.node.internal
 
 import net.corda.core.contracts.*
+import net.corda.core.internal.resolveBaseTransaction
 import net.corda.core.node.StateLoader
 import net.corda.core.node.services.AttachmentStorage
 import net.corda.core.node.services.TransactionStorage
