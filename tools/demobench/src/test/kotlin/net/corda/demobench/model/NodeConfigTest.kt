@@ -38,6 +38,12 @@ class NodeConfigTest {
                 .withValue("baseDirectory", ConfigValueFactory.fromAnyRef(baseDir.toString()))
                 .withFallback(ConfigFactory.parseResources("reference.conf"))
                 .resolve()
+
+        //Check if properties are properly structured ( 'dataSourceProperties {  dataSource { url =..' and not 'dataSourceProperties {  dataSource.url =..'
+        assertTrue(nodeConfig.hasPath("dataSourceProperties.dataSource.url"))
+        assertTrue(nodeConfig.hasPath("dataSourceProperties.dataSource.user"))
+        assertTrue(nodeConfig.hasPath("dataSourceProperties.dataSource.password"))
+
         val fullConfig = nodeConfig.parseAsNodeConfiguration()
 
         assertEquals(myLegalName, fullConfig.myLegalName)
