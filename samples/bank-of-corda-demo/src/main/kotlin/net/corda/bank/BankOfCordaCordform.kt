@@ -119,7 +119,7 @@ object IssueCash {
         Usage: bank-of-corda --role ISSUER
                bank-of-corda --role (ISSUE_CASH_RPC|ISSUE_CASH_WEB) --quantity <quantity> --currency <currency>
 
-        Please refer toer. the documentation in docs/build/index.html for more info.
+        Please refer to the documentation in docs/build/index.html for more info.
 
         """.trimIndent())
         parser.printHelpOn(System.out)
