@@ -88,7 +88,8 @@ class WireTransaction(componentGroups: List<ComponentGroup>, val privacySalt: Pr
                 resolveIdentity = { services.identityService.partyFromKey(it) },
                 resolveAttachment = { services.attachments.openAttachment(it) },
                 resolveStateRef = { services.loadState(it) },
-                resolveContractAttachment = { services.cordappProvider.getContractAttachmentID(it.contract) }
+                resolveContractAttachment = { services.cordappProvider.getContractAttachmentID(it.contract) },
+                maxTransactionSize = services.maxTransactionSize
         )
     }
 
@@ -104,7 +105,8 @@ class WireTransaction(componentGroups: List<ComponentGroup>, val privacySalt: Pr
             resolveIdentity: (PublicKey) -> Party?,
             resolveAttachment: (SecureHash) -> Attachment?,
             resolveStateRef: (StateRef) -> TransactionState<*>?,
-            resolveContractAttachment: (TransactionState<ContractState>) -> AttachmentId?
+            resolveContractAttachment: (TransactionState<ContractState>) -> AttachmentId?,
+            maxTransactionSize: Int
     ): LedgerTransaction {
         // Look up public keys to authenticated identities. This is just a stub placeholder and will all change in future.
         val authenticatedArgs = commands.map {
@@ -118,7 +120,26 @@ class WireTransaction(componentGroups: List<ComponentGroup>, val privacySalt: Pr
         val contractAttachments = findAttachmentContracts(resolvedInputs, resolveContractAttachment, resolveAttachment)
         // Order of attachments is important since contracts may refer to indexes so only append automatic attachments
         val attachments = (attachments.map { resolveAttachment(it) ?: throw AttachmentResolutionException(it) } + contractAttachments).distinct()
-        return LedgerTransaction(resolvedInputs, outputs, authenticatedArgs, attachments, id, notary, timeWindow, privacySalt)
+        val ltx = LedgerTransaction(resolvedInputs, outputs, authenticatedArgs, attachments, id, notary, timeWindow, privacySalt)
+        checkTransactionSize(ltx, maxTransactionSize)
+        return ltx
+    }
+
+    private fun checkTransactionSize(ltx: LedgerTransaction, maxTransactionSize: Int) {
+        var remainingTransactionSize = maxTransactionSize
+        // Check attachment size first as they are most likely to go over the limit.
+        ltx.attachments.forEach {
+            remainingTransactionSize = Math.subtractExact(remainingTransactionSize, it.size)
+            require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
+        }
+        remainingTransactionSize = Math.subtractExact(maxTransactionSize, ltx.inputs.serialize().size)
+        require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
+
+        remainingTransactionSize = Math.subtractExact(maxTransactionSize, ltx.commands.serialize().size)
+        require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
+
+        remainingTransactionSize = Math.subtractExact(maxTransactionSize, ltx.outputs.serialize().size)
+        require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
     }
 
     /**

@@ -214,6 +214,8 @@ open class MockServices private constructor(
     override fun jdbcSession(): Connection = throw UnsupportedOperationException()
 
     override fun registerUnloadHandler(runOnStop: () -> Unit) = throw UnsupportedOperationException()
+
+    override val maxTransactionSize = Int.MAX_VALUE
 }
 
 class MockKeyManagementService(val identityService: IdentityServiceInternal,

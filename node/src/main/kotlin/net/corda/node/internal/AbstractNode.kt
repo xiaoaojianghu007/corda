@@ -545,7 +545,8 @@ abstract class AbstractNode(val configuration: NodeConfiguration,
                 cordappProvider,
                 database,
                 info,
-                networkMapCache)
+                networkMapCache,
+                networkParameters.maxTransactionSize)
         network = makeMessagingService(database, info)
         val tokenizableServices = mutableListOf(attachments, network, services.vaultService,
                 services.keyManagementService, services.identityService, platformClock,
@@ -774,7 +775,8 @@ abstract class AbstractNode(val configuration: NodeConfiguration,
             override val cordappProvider: CordappProviderInternal,
             override val database: CordaPersistence,
             override val myInfo: NodeInfo,
-            override val networkMapCache: NetworkMapCacheInternal
+            override val networkMapCache: NetworkMapCacheInternal,
+            override val maxTransactionSize: Int
     ) : SingletonSerializeAsToken(), ServiceHubInternal, StateLoader by validatedTransactions {
         override val rpcFlows = ArrayList<Class<out FlowLogic<*>>>()
         override val stateMachineRecordedTransactionMapping = DBTransactionMappingStorage()

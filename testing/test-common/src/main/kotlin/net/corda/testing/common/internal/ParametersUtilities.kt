@@ -9,7 +9,7 @@ fun testNetworkParameters(
         minimumPlatformVersion: Int = 1,
         modifiedTime: Instant = Instant.now(),
         maxMessageSize: Int = 10485760,
-        maxTransactionSize: Int = 40000,
+        maxTransactionSize: Int = 4_000_000,
         epoch: Int = 1
 ): NetworkParameters {
     return NetworkParameters(

@@ -45,7 +45,8 @@ data class GeneratedLedger(
                 resolveIdentity = { identityMap[it] },
                 resolveAttachment = { attachmentMap[it] },
                 resolveStateRef = { hashTransactionMap[it.txhash]?.outputs?.get(it.index) },
-                resolveContractAttachment = { contractAttachmentMap[it.contract]?.id }
+                resolveContractAttachment = { contractAttachmentMap[it.contract]?.id },
+                maxTransactionSize = Int.MAX_VALUE
         )
     }
 

@@ -60,6 +60,8 @@ interface ServicesForResolution : StateLoader {
 
     /** Provides access to anything relating to cordapps including contract attachment resolution and app context */
     val cordappProvider: CordappProvider
+
+    val maxTransactionSize: Int
 }
 
 /**
