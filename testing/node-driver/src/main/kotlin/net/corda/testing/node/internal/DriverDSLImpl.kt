@@ -87,7 +87,8 @@ class DriverDSLImpl(
         extraCordappPackagesToScan: List<String>,
         val jmxPolicy: JmxPolicy,
         val notarySpecs: List<NotarySpec>,
-        val compatibilityZone: CompatibilityZoneParams?
+        val compatibilityZone: CompatibilityZoneParams?,
+        val maxTransactionSize:Int
 ) : InternalDriverDSL {
     private var _executorService: ScheduledExecutorService? = null
     val executorService get() = _executorService!!
@@ -307,7 +308,7 @@ class DriverDSLImpl(
             notaryInfos += NotaryInfo(identity, type.validating)
         }
 
-        val localNetworkMap = LocalNetworkMap(notaryInfos)
+        val localNetworkMap = LocalNetworkMap(notaryInfos, maxTransactionSize)
 
         return cordforms.map {
             val startedNode = startCordformNode(it, localNetworkMap)
@@ -387,7 +388,7 @@ class DriverDSLImpl(
         val notaryInfosFuture = if (compatibilityZone == null) {
             // If no CZ is specified then the driver does the generation of the network parameters and the copying of the
             // node info files.
-            startNotaryIdentityGeneration().map { notaryInfos -> Pair(notaryInfos, LocalNetworkMap(notaryInfos)) }
+            startNotaryIdentityGeneration().map { notaryInfos -> Pair(notaryInfos, LocalNetworkMap(notaryInfos, maxTransactionSize)) }
         } else {
             // Otherwise it's the CZ's job to distribute thse via the HTTP network map, as that is what the nodes will be expecting.
             val notaryInfosFuture = if (compatibilityZone.rootCert == null) {
@@ -698,8 +699,8 @@ class DriverDSLImpl(
     /**
      * The local version of the network map, which is a bunch of classes that copy the relevant files to the node directories.
      */
-    private inner class LocalNetworkMap(notaryInfos: List<NotaryInfo>) {
-        val networkParametersCopier = NetworkParametersCopier(testNetworkParameters(notaryInfos))
+    private inner class LocalNetworkMap(notaryInfos: List<NotaryInfo>, maxTransactionSize: Int) {
+        val networkParametersCopier = NetworkParametersCopier(testNetworkParameters(notaryInfos, maxTransactionSize = maxTransactionSize))
         // TODO: this object will copy NodeInfo files from started nodes to other nodes additional-node-infos/
         // This uses the FileSystem and adds a delay (~5 seconds) given by the time we wait before polling the file system.
         // Investigate whether we can avoid that.
@@ -950,6 +951,7 @@ fun <DI : DriverDSL, D : InternalDriverDSL, A> genericDriver(
         notarySpecs: List<NotarySpec>,
         extraCordappPackagesToScan: List<String> = defaultParameters.extraCordappPackagesToScan,
         jmxPolicy: JmxPolicy = JmxPolicy(),
+        maxTransactionSize: Int = defaultParameters.maxTransactionSize,
         driverDslWrapper: (DriverDSLImpl) -> D,
         coerce: (D) -> DI, dsl: DI.() -> A
 ): A {
@@ -967,7 +969,8 @@ fun <DI : DriverDSL, D : InternalDriverDSL, A> genericDriver(
                     extraCordappPackagesToScan = extraCordappPackagesToScan,
                     jmxPolicy = jmxPolicy,
                     notarySpecs = notarySpecs,
-                    compatibilityZone = null
+                    compatibilityZone = null,
+                    maxTransactionSize = maxTransactionSize
             )
     )
     val shutdownHook = addShutdownHook(driverDsl::shutdown)
@@ -1010,6 +1013,7 @@ fun <A> internalDriver(
         extraCordappPackagesToScan: List<String> = DriverParameters().extraCordappPackagesToScan,
         jmxPolicy: JmxPolicy = DriverParameters().jmxPolicy,
         compatibilityZone: CompatibilityZoneParams? = null,
+        maxTransactionSize: Int = DriverParameters().maxTransactionSize,
         dsl: DriverDSLImpl.() -> A
 ): A {
     return genericDriver(
@@ -1025,7 +1029,8 @@ fun <A> internalDriver(
                     notarySpecs = notarySpecs,
                     extraCordappPackagesToScan = extraCordappPackagesToScan,
                     jmxPolicy = jmxPolicy,
-                    compatibilityZone = compatibilityZone
+                    compatibilityZone = compatibilityZone,
+                    maxTransactionSize = maxTransactionSize
             ),
             coerce = { it },
             dsl = dsl,

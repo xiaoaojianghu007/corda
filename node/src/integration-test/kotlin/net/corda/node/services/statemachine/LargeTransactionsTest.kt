@@ -16,6 +16,7 @@ import net.corda.testing.driver.driver
 import net.corda.testing.node.User
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 /**
  * Check that we can add lots of large attachments to a transaction and that it works OK, e.g. does not hit the
@@ -70,7 +71,7 @@ class LargeTransactionsTest {
         val bigFile2 = InputStreamAndHash.createInMemoryTestZip(1024 * 1024 * 3, 1)
         val bigFile3 = InputStreamAndHash.createInMemoryTestZip(1024 * 1024 * 3, 2)
         val bigFile4 = InputStreamAndHash.createInMemoryTestZip(1024 * 1024 * 3, 3)
-        driver(startNodesInProcess = true, extraCordappPackagesToScan = listOf("net.corda.testing.contracts"), portAllocation = PortAllocation.RandomFree) {
+        driver(startNodesInProcess = true, extraCordappPackagesToScan = listOf("net.corda.testing.contracts"), portAllocation = PortAllocation.RandomFree, maxTransactionSize = Int.MAX_VALUE) {
             val rpcUser = User("admin", "admin", setOf("ALL"))
             val (alice, _) = listOf(ALICE_NAME, BOB_NAME).map { startNode(providedName = it, rpcUsers = listOf(rpcUser)) }.transpose().getOrThrow()
             alice.rpcClientToNode().use(rpcUser.username, rpcUser.password) {
@@ -81,6 +82,30 @@ class LargeTransactionsTest {
                 assertEquals(hash1, bigFile1.sha256)
                 // Should not throw any exceptions.
                 it.proxy.startFlow(::SendLargeTransactionFlow, hash1, hash2, hash3, hash4).returnValue.getOrThrow()
+            }
+        }
+    }
+
+    @Test
+    fun `check transaction will fail when exceed max transaction size limit`() {
+        // These 4 attachments yield a transaction that's got ~ 4mb, which will exceed the 3mb max transaction size limit
+        val bigFile1 = InputStreamAndHash.createInMemoryTestZip(1024 * 1024, 0)
+        val bigFile2 = InputStreamAndHash.createInMemoryTestZip(1024 * 1024, 1)
+        val bigFile3 = InputStreamAndHash.createInMemoryTestZip(1024 * 1024, 2)
+        val bigFile4 = InputStreamAndHash.createInMemoryTestZip(1024 * 1024, 3)
+        driver(startNodesInProcess = true, extraCordappPackagesToScan = listOf("net.corda.testing.contracts"), portAllocation = PortAllocation.RandomFree, maxTransactionSize = 3_000_000) {
+            val rpcUser = User("admin", "admin", setOf("ALL"))
+            val (alice, _) = listOf(ALICE_NAME, BOB_NAME).map { startNode(providedName = it, rpcUsers = listOf(rpcUser)) }.transpose().getOrThrow()
+            alice.rpcClientToNode().use(rpcUser.username, rpcUser.password) {
+                val hash1 = it.proxy.uploadAttachment(bigFile1.inputStream)
+                val hash2 = it.proxy.uploadAttachment(bigFile2.inputStream)
+                val hash3 = it.proxy.uploadAttachment(bigFile3.inputStream)
+                val hash4 = it.proxy.uploadAttachment(bigFile4.inputStream)
+                assertEquals(hash1, bigFile1.sha256)
+
+                assertFailsWith<UnexpectedFlowEndException> {
+                    it.proxy.startFlow(::SendLargeTransactionFlow, hash1, hash2, hash3, hash4).returnValue.getOrThrow()
+                }
             }
         }
     }

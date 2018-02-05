@@ -132,14 +132,10 @@ class WireTransaction(componentGroups: List<ComponentGroup>, val privacySalt: Pr
             remainingTransactionSize = Math.subtractExact(remainingTransactionSize, it.size)
             require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
         }
-        remainingTransactionSize = Math.subtractExact(maxTransactionSize, ltx.inputs.serialize().size)
-        require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
-
-        remainingTransactionSize = Math.subtractExact(maxTransactionSize, ltx.commands.serialize().size)
-        require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
-
-        remainingTransactionSize = Math.subtractExact(maxTransactionSize, ltx.outputs.serialize().size)
-        require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
+        listOf(ltx.inputs, ltx.commands, ltx.outputs).forEach {
+            remainingTransactionSize = Math.subtractExact(maxTransactionSize, it.serialize().size)
+            require(remainingTransactionSize > 0) { "Transaction exceeded network's maximum transaction size limit : $maxTransactionSize bytes." }
+        }
     }
 
     /**
