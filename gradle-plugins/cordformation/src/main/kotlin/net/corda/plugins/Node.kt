@@ -1,14 +1,14 @@
 package net.corda.plugins
 
 import com.typesafe.config.ConfigFactory
+import com.typesafe.config.ConfigObject
 import com.typesafe.config.ConfigRenderOptions
 import com.typesafe.config.ConfigValueFactory
-import com.typesafe.config.ConfigObject
 import groovy.lang.Closure
 import net.corda.cordform.CordformNode
+import net.corda.cordform.RpcSettings
 import org.apache.commons.io.FilenameUtils
 import org.gradle.api.GradleException
-import net.corda.cordform.RpcSettings
 import org.gradle.api.Project
 import org.gradle.api.artifacts.ProjectDependency
 import java.io.File
@@ -187,7 +187,6 @@ open class Node @Inject constructor(private val project: Project) : CordformNode
             }
         }
         installAgentJar()
-        installBuiltCordapp()
         installCordapps()
     }
 
