@@ -89,7 +89,7 @@ private abstract class JavaCommand(
     internal val command: List<String> = mutableListOf<String>().apply {
         add(getJavaPath())
         addAll(jvmArgs)
-        add("-Dname=\"$nodeName\"")
+        add("-Dname=$nodeName")
         val jvmArgs: MutableList<String> = mutableListOf()
         null != debugPort && jvmArgs.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=$debugPort")
         null != monitoringPort && jvmArgs.add("-javaagent:drivers/$jolokiaJar=port=$monitoringPort")
@@ -109,7 +109,11 @@ private abstract class JavaCommand(
 
 private class HeadlessJavaCommand(jarName: String, dir: File, debugPort: Int?, monitoringPort: Int?, args: List<String>, jvmArgs: List<String>)
     : JavaCommand(jarName, dir, debugPort, monitoringPort, dir.name, { add("--no-local-shell") }, args, jvmArgs) {
-    override fun processBuilder() = ProcessBuilder(command).redirectError(File("error.$nodeName.log")).inheritIO()
+    override fun processBuilder(): ProcessBuilder {
+        println("Running command: ${command.joinToString(" ")}")
+        return ProcessBuilder(command).redirectError(File("error.$nodeName.log")).inheritIO()
+    }
+
     override fun getJavaPath() = File(File(System.getProperty("java.home"), "bin"), "java").path
 }
 
