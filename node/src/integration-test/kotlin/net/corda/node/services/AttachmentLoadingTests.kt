@@ -84,6 +84,7 @@ class AttachmentLoadingTests {
         doReturn(rigorousMock<IdentityService>().also {
             doReturn(null).whenever(it).partyFromKey(DUMMY_BANK_A.owningKey)
         }).whenever(it).identityService
+        doReturn(Int.MAX_VALUE).whenever(it).maxTransactionSize
     }
 
     @Test
