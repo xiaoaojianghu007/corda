@@ -28,6 +28,7 @@ abstract class AbstractAttachment(dataLoader: () -> ByteArray) : Attachment {
 
     protected val attachmentData: ByteArray by lazy(dataLoader)
 
+    // TODO: read file size information from metadata instead of loading the data.
     override val size: Int by lazy { attachmentData.size }
 
     override fun open(): InputStream = attachmentData.inputStream()
