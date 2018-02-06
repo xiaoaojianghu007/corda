@@ -30,6 +30,7 @@ import net.corda.node.internal.security.AuthorizingSubject
 import net.corda.node.internal.security.RPCSecurityManager
 import net.corda.node.services.logging.pushToLoggingContext
 import net.corda.nodeapi.*
+import net.corda.nodeapi.internal.ArtemisDeduplicationCache
 import org.apache.activemq.artemis.api.core.Message
 import org.apache.activemq.artemis.api.core.SimpleString
 import org.apache.activemq.artemis.api.core.client.ActiveMQClient.DEFAULT_ACK_BATCH_SIZE
@@ -59,14 +60,17 @@ data class RPCServerConfiguration(
         /** The maximum number of producers to create to handle outgoing messages */
         val producerPoolBound: Int,
         /** The interval of subscription reaping */
-        val reapInterval: Duration
+        val reapInterval: Duration,
+        /** The size of the deduplication ID cache */
+        val deduplicationMessageIdCacheSize: Long
 ) {
     companion object {
         val default = RPCServerConfiguration(
                 rpcThreadPoolSize = 4,
                 consumerPoolSize = 2,
                 producerPoolBound = 4,
-                reapInterval = 1.seconds
+                reapInterval = 1.seconds,
+                deduplicationMessageIdCacheSize = 2048
         )
     }
 }
@@ -131,6 +135,8 @@ class RPCServer(
     private var serverControl: ActiveMQServerControl? = null
 
     private val responseMessageBuffer = ConcurrentHashMap<SimpleString, BufferOrNone>()
+
+    private val deduplicationCache = ArtemisDeduplicationCache(rpcConfiguration.deduplicationMessageIdCacheSize)
 
     init {
         val groupedMethods = ops.javaClass.declaredMethods.groupBy { it.name }
@@ -268,6 +274,10 @@ class RPCServer(
     }
 
     private fun clientArtemisMessageHandler(artemisMessage: ClientMessage) {
+        if (deduplicationCache.checkDuplicateMessageId(artemisMessage.messageID)) {
+            log.info("Message duplication detected, discarding message")
+            return
+        }
         lifeCycle.requireState(State.STARTED)
         val clientToServer = RPCApi.ClientToServer.fromClientMessage(artemisMessage)
         log.debug { "-> RPC -> $clientToServer" }
@@ -321,10 +331,8 @@ class RPCServer(
                 replyId,
                 observableMap,
                 clientAddressToObservables,
-                clientAddress,
-                serverControl!!,
-                sessionAndProducerPool,
-                observationSendExecutor!!
+                observationSendExecutor!!,
+                clientAddress
         )
 
         val buffered = bufferIfQueueNotBound(clientAddress, reply, observableContext)
@@ -369,6 +377,38 @@ class RPCServer(
         val validatedUser = message.getStringProperty(Message.HDR_VALIDATED_USER) ?: throw IllegalArgumentException("Missing validated user from the Artemis message")
         val targetLegalIdentity = message.getStringProperty(RPCApi.RPC_TARGET_LEGAL_IDENTITY)?.let(CordaX500Name.Companion::parse) ?: nodeLegalName
         return Pair(Actor(Id(validatedUser), securityManager.id, targetLegalIdentity), securityManager.buildSubject(validatedUser))
+    }
+
+    // We construct an observable context on each RPC request. If subsequently a nested Observable is
+    // encountered this same context is propagated by the instrumented KryoPool. This way all
+    // observations rooted in a single RPC will be muxed correctly. Note that the context construction
+    // itself is quite cheap.
+    inner class ObservableContext(
+            val invocationId: InvocationId,
+            val observableMap: ObservableSubscriptionMap,
+            val clientAddressToObservables: SetMultimap<SimpleString, InvocationId>,
+            val observationSendExecutor: ExecutorService,
+            val clientAddress: SimpleString
+    ) {
+        private val serializationContextWithObservableContext = RpcServerObservableSerializer.createContext(this)
+
+        fun sendMessage(serverToClient: RPCApi.ServerToClient) {
+            try {
+//                if (serverToClient is RPCApi.ServerToClient.RpcReply) {
+//                    log.error("Sending $serverToClient", Exception().also { it.fillInStackTrace() })
+//                }
+                sessionAndProducerPool.run(invocationId) {
+                    val artemisMessage = it.session.createMessage(false)
+                    serverToClient.writeToClientMessage(serializationContextWithObservableContext, artemisMessage)
+                    it.producer.send(clientAddress, artemisMessage)
+                    log.debug("<- RPC <- $serverToClient")
+                }
+            } catch (throwable: Throwable) {
+                log.error("Failed to send message, kicking client. Message was $serverToClient", throwable)
+                serverControl!!.closeConsumerConnectionsForAddress(clientAddress.toString())
+                invalidateClient(clientAddress)
+            }
+        }
     }
 }
 
@@ -417,45 +457,11 @@ class ObservableSubscription(
 
 typealias ObservableSubscriptionMap = Cache<InvocationId, ObservableSubscription>
 
-// We construct an observable context on each RPC request. If subsequently a nested Observable is
-// encountered this same context is propagated by the instrumented KryoPool. This way all
-// observations rooted in a single RPC will be muxed correctly. Note that the context construction
-// itself is quite cheap.
-class ObservableContext(
-        val invocationId: InvocationId,
-        val observableMap: ObservableSubscriptionMap,
-        val clientAddressToObservables: SetMultimap<SimpleString, InvocationId>,
-        val clientAddress: SimpleString,
-        val serverControl: ActiveMQServerControl,
-        val sessionAndProducerPool: LazyStickyPool<ArtemisProducer>,
-        val observationSendExecutor: ExecutorService
-) {
-    private companion object {
-        private val log = contextLogger()
-    }
-
-    private val serializationContextWithObservableContext = RpcServerObservableSerializer.createContext(this)
-
-    fun sendMessage(serverToClient: RPCApi.ServerToClient) {
-        try {
-            sessionAndProducerPool.run(invocationId) {
-                val artemisMessage = it.session.createMessage(false)
-                serverToClient.writeToClientMessage(serializationContextWithObservableContext, artemisMessage)
-                it.producer.send(clientAddress, artemisMessage)
-                log.debug("<- RPC <- $serverToClient")
-            }
-        } catch (throwable: Throwable) {
-            log.error("Failed to send message, kicking client. Message was $serverToClient", throwable)
-            serverControl.closeConsumerConnectionsForAddress(clientAddress.toString())
-        }
-    }
-}
-
 object RpcServerObservableSerializer : Serializer<Observable<*>>() {
     private object RpcObservableContextKey
 
     private val log = LoggerFactory.getLogger(javaClass)
-    fun createContext(observableContext: ObservableContext): SerializationContext {
+    fun createContext(observableContext: RPCServer.ObservableContext): SerializationContext {
         return RPC_SERVER_CONTEXT.withProperty(RpcServerObservableSerializer.RpcObservableContextKey, observableContext)
     }
 
@@ -465,7 +471,7 @@ object RpcServerObservableSerializer : Serializer<Observable<*>>() {
 
     override fun write(kryo: Kryo, output: Output, observable: Observable<*>) {
         val observableId = InvocationId.newInstance()
-        val observableContext = kryo.context[RpcObservableContextKey] as ObservableContext
+        val observableContext = kryo.context[RpcObservableContextKey] as RPCServer.ObservableContext
         output.writeInvocationId(observableId)
         val observableWithSubscription = ObservableSubscription(
                 // We capture [observableContext] in the subscriber. Note that all synchronisation/kryo borrowing

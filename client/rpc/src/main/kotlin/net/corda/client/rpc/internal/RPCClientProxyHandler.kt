@@ -29,6 +29,7 @@ import net.corda.core.utilities.getOrThrow
 import net.corda.nodeapi.ArtemisConsumer
 import net.corda.nodeapi.ArtemisProducer
 import net.corda.nodeapi.RPCApi
+import net.corda.nodeapi.internal.ArtemisDeduplicationCache
 import org.apache.activemq.artemis.api.core.RoutingType
 import org.apache.activemq.artemis.api.core.SimpleString
 import org.apache.activemq.artemis.api.core.client.ActiveMQClient.DEFAULT_ACK_BATCH_SIZE
@@ -178,6 +179,8 @@ class RPCClientProxyHandler(
         ArtemisProducer(sessionFactory, session, session.createProducer(RPCApi.RPC_SERVER_QUEUE_NAME))
     }
 
+    private val deduplicationCache = ArtemisDeduplicationCache(rpcConfiguration.deduplicationMessageIdCacheSize)
+
     /**
      * Start the client. This creates the per-client queue, starts the consumer session and the reaper.
      */
@@ -251,6 +254,10 @@ class RPCClientProxyHandler(
 
     // The handler for Artemis messages.
     private fun artemisMessageHandler(message: ClientMessage) {
+        if (deduplicationCache.checkDuplicateMessageId(message.messageID)) {
+            log.info("Message duplication detected, discarding message")
+            return
+        }
         val serverToClient = RPCApi.ServerToClient.fromClientMessage(serializationContextWithObservableContext, message)
         log.debug { "Got message from RPC server $serverToClient" }
         when (serverToClient) {
